@@ -1,36 +1,51 @@
-name: GitHub Action Name
-description: A GitHub Action Descriptionto Open a specified GitHub issue using the GitHub API
+name: "Merge Pull Request"
+description: "A GitHub Action to merge a Pull Request using the GitHub REST API"
 author: Lee Lott
 
 inputs:
-  input-1:
-    description: 'Description of input'
+  pr-number:
+    description: 'The number of the pull request whose review status is to be updated'
     required: true
-  input-2:
-    description: 'Description of input'
+  repo-name:
+    description: 'The name of the repository'
     required: true
-  input-3:
-    description: 'Description of input'
+  org-name:
+    description: 'The name of the GitHub organization'
+    required: true    
+  merge-type:
+    description: |
+      The type of merge to be performed. Allowed values:
+        - merge: Create a merge commit. All commits from the pull request are added to the base branch in a single merge commit.
+        - squash: Combine all commits from the pull request into a single commit, then add that to the base branch.
+        - rebase: Rebase the commits from the pull request onto the base branch individually, without a merge commit.
+    required: true
+  merge-title-message:
+    description: 'The title for the commit message'
+    required: true
+  token:
+    description: 'GitHub token with access to pull requests'
     required: true
 
 outputs:
   result:
-    description: 'Result of the action ("success" or "failure")'
+    description: 'Result of the attempt to merge the Pull Request ("success" or "failure")'
     value: ${{ steps.action.outputs.result }}
   error-message:
-    description: 'Error message if the action fails'
+    description: 'Error message if the Pull Request merge fails'
     value: ${{ steps.action.outputs.error-message }}
-
+    
 runs:
-  using: composite
+  using: "composite"
   steps:
-    - name: Action Name
+    - name: Merge Pull Request
       id: action
       shell: pwsh
-      run: |        
+      run: |
         . "${{ github.action_path }}/action.ps1"
-        run_action `
-          -Input1 "${{ inputs.input-1 }}" `
-          -Input2 "${{ inputs.input-2 }}" `
-          -Inpute3 "${{ inputs.input-3 }}" `
-      
+        Merge-Pull-Request `
+          -PrNumber "${{ inputs.pr-number }}" `
+          -RepoName "${{ inputs.repo-name }}" `
+          -OrgName "${{ inputs.org-name }}" `
+          -MergeType "${{ inputs.merge-type }}" `
+          -MergeTitleMessage "${{ inputs.merge-title-message }}" `
+          -Token "${{ inputs.token }}"
