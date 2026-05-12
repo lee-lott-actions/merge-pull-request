@@ -1,84 +1,56 @@
-# Dummy values for required parameters
-$script:OrgName    = "my-org"
-$script:RepoName   = "my-repo"
-$script:PrNumber   = "101"
-$script:MergeType  = "merge"
-$script:MergeTitleMessage = "Unit test merge commit title"
-$script:Token      = "dummy-token"
-$script:ApiUrl     = "https://api.mytests.com"
-
 Describe "Merge-Pull-Request" {
     BeforeAll {
+        $script:OrgName           = "my-org"
+        $script:RepoName          = "my-repo"
+        $script:PrNumber          = "101"
+        $script:MergeType         = "merge"
+        $script:MergeTitleMessage = "Unit test merge commit title"
+        $script:Token             = "dummy-token"
+        $script:MockApiUrl        = "http://127.0.0.1:3000"
         . "$PSScriptRoot/../action.ps1"
     }
 
     BeforeEach {
-        # Clean up GITHUB_OUTPUT for each test
-        $env:GITHUB_OUTPUT = "$PSScriptRoot/github_output.temp"
-        if (Test-Path $env:GITHUB_OUTPUT) { Remove-Item $env:GITHUB_OUTPUT }
+        $env:GITHUB_OUTPUT = New-TemporaryFile
+        $env:MOCK_API = $script:MockApiUrl
     }
     
-    AfterAll {
+    AfterEach {
         if (Test-Path $env:GITHUB_OUTPUT) { Remove-Item $env:GITHUB_OUTPUT }
+        Remove-Variable -Name MOCK_API -Scope Global -ErrorAction SilentlyContinue
     }
+
+    Context "Success Cases" {
+        It "unit: Merge-Pull-Request succeeds with HTTP 200" {
+            Mock Invoke-WebRequest {
+                [PSCustomObject]@{
+                    StatusCode = 200
+                    Content = '{"merged":true,"message":"Pull Request successfully merged"}'
+                }
+            }
     
-    It "merges a PR and writes result=success to output" {
-        # Arrange
-        Mock Invoke-WebRequest {
-            # Simulate a web response with a status code
-            [PSCustomObject]@{
-                StatusCode = 200
-                Content = '{"merged":true,"message":"Pull Request successfully merged"}'
-            }
+             Merge-Pull-Request `
+                -RepoName $RepoName `
+                -OrgName $OrgName `
+                -PrNumber $PrNumber `
+                -MergeType $MergeType `
+                -MergeTitleMessage $MergeTitleMessage `
+                -Token $Token
+    
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=success"
         }
-
-        # Set mock API endpoint
-        $env:MOCK_API = $ApiUrl
-
-        # Act
-        Merge-Pull-Request `
-            -RepoName $RepoName `
-            -OrgName $OrgName `
-            -PrNumber $PrNumber `
-            -MergeType $MergeType `
-            -MergeTitleMessage $MergeTitleMessage `
-            -Token $Token
-
-        # Assert
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=success"
     }
 
-    It "writes result=failure and error-message to output for non-200 response" {
-        # Arrange
-        Mock Invoke-WebRequest {
-            [PSCustomObject]@{
-                StatusCode = 405
-                Content = '{"message":"Method Not Allowed"}'
+    Context "HTTP Failure Cases" {
+        It "unit: Merge-Pull-Request fails with HTTP 405" {
+            Mock Invoke-WebRequest {
+                [PSCustomObject]@{
+                    StatusCode = 405
+                    Content = '{"message":"Method Not Allowed"}'
+                }
             }
-        }
-        $env:MOCK_API = $ApiUrl
 
-        # Act
-        Merge-Pull-Request `
-            -RepoName $RepoName `
-            -OrgName $OrgName `
-            -PrNumber $PrNumber `
-            -MergeType $MergeType `
-            -MergeTitleMessage $MergeTitleMessage `
-            -Token $Token
-
-        # Assert
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Merge failed with status code 405."
-    }
-
-    It "writes result=failure and error-message to output on web error" {
-        Mock Invoke-WebRequest { throw "API Error" }
-        $env:MOCK_API = $ApiUrl
-
-        try {
             Merge-Pull-Request `
                 -RepoName $RepoName `
                 -OrgName $OrgName `
@@ -86,115 +58,127 @@ Describe "Merge-Pull-Request" {
                 -MergeType $MergeType `
                 -MergeTitleMessage $MergeTitleMessage `
                 -Token $Token
-        } catch {}
-
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Merge threw an exception and failed."
+    
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Should -Contain "error-message=Error: Failed to merge pull request. Status: 405."
+        }
     }
 
-    It "throws if PrStatus is empty" {
-        { Set-Pull-Request-Review-Status `
-            -RepoName $RepoName `
-            -OrgName $OrgName `
-            -PrNumber $PrNumber `
-            -PrStatus "" `
-            -PrMessage $PrMessage `
-            -Token $Token
-        } | Should -Throw
-    }
+    Context "Parameter Validation Failure Cases {
+        It "unit: Merge-Pull-Request fails with empty RepoName" {
+            Merge-Pull-Request `
+                -RepoName "" `
+                -OrgName $OrgName `
+                -PrNumber $PrNumber `
+                -MergeType $MergeType `
+                -MergeTitleMessage $MergeTitleMessage `
+                -Token $Token
+                    
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
+	    }
 
-    It "throws if MergeType is not valid" {
-        { 
+        It "unit: Merge-Pull-Request fails with empty OrgName" {
+            Merge-Pull-Request `
+                -RepoName $RepoName `
+                -OrgName "" `
+                -PrNumber $PrNumber `
+                -MergeType $MergeType `
+                -MergeTitleMessage $MergeTitleMessage `
+                -Token $Token
+                    
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
+	    }
+
+        It "unit: Merge-Pull-Request fails with empty PrNumber" {
+            Merge-Pull-Request `
+                -RepoName $RepoName `
+                -OrgName $OrgName `
+                -PrNumber "" `
+                -MergeType $MergeType `
+                -MergeTitleMessage $MergeTitleMessage `
+                -Token $Token
+        
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
+        }
+
+        It "unit: Merge-Pull-Request throws exception if MergeType is empty" {
+            { 
+                Merge-Pull-Request `
+                    -RepoName $RepoName `
+                    -OrgName $OrgName `
+                    -PrNumber $PrNumber `
+                    -MergeType "" `
+                    -MergeTitleMessage $MergeTitleMessage `
+                    -Token $Token
+            } | Should -Throw
+        }
+
+        It "unit: Merge-Pull-Request throws exception if MergeType is not valid" {
+            { 
+                Merge-Pull-Request `
+                    -RepoName $RepoName `
+                    -OrgName $OrgName `
+                    -PrNumber $PrNumber `
+                    -MergeType "INVALID_TYPE" `
+                    -MergeTitleMessage $MergeTitleMessage `
+                    -Token $Token
+            } | Should -Throw
+        }
+        
+        It "unit: Merge-Pull-Request fails with empty MergeTitleMessage" {
             Merge-Pull-Request `
                 -RepoName $RepoName `
                 -OrgName $OrgName `
                 -PrNumber $PrNumber `
-                -MergeType "INVALID_TYPE" `
-                -MergeTitleMessage $MergeTitleMessage `
+                -MergeType $MergeType `
+                -MergeTitleMessage "" `
                 -Token $Token
-        } | Should -Throw
-    }
-
-    It "writes result=failure for empty RepoName" {
-        Merge-Pull-Request `
-            -RepoName "" `
-            -OrgName $OrgName `
-            -PrNumber $PrNumber `
-            -MergeType $MergeType `
-            -MergeTitleMessage $MergeTitleMessage `
-            -Token $Token
-    
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
-    }
-    
-    It "writes result=failure for empty OrgName" {
-        Merge-Pull-Request `
-            -RepoName $RepoName `
-            -OrgName "" `
-            -PrNumber $PrNumber `
-            -MergeType $MergeType `
-            -MergeTitleMessage $MergeTitleMessage `
-            -Token $Token
-    
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
-    }
-    
-    It "writes result=failure for empty PrNumber" {
-        Merge-Pull-Request `
-            -RepoName $RepoName `
-            -OrgName $OrgName `
-            -PrNumber "" `
-            -MergeType $MergeType `
-            -MergeTitleMessage $MergeTitleMessage `
-            -Token $Token
-    
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
-    }
-    
-    It "throws if MergeType is empty" {
-        { 
+        
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
+        }
+        
+        It "unit: Merge-Pull-Request fails with empty Token" {
             Merge-Pull-Request `
                 -RepoName $RepoName `
                 -OrgName $OrgName `
                 -PrNumber $PrNumber `
-                -MergeType "" `
+                -MergeType $MergeType `
                 -MergeTitleMessage $MergeTitleMessage `
-                -Token $Token
-        } | Should -Throw
+                -Token ""
+        
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
+        }    
     }
+
+    Context "Exception Failure Cases {
+        It "unit: Merge-Pull-Request fails with exception" {
+            Mock Invoke-WebRequest { throw "API Error" }
     
-    It "writes result=failure for empty MergeTitleMessage" {
-        Merge-Pull-Request `
-            -RepoName $RepoName `
-            -OrgName $OrgName `
-            -PrNumber $PrNumber `
-            -MergeType $MergeType `
-            -MergeTitleMessage "" `
-            -Token $Token
+            try {
+                Merge-Pull-Request `
+                    -RepoName $RepoName `
+                    -OrgName $OrgName `
+                    -PrNumber $PrNumber `
+                    -MergeType $MergeType `
+                    -MergeTitleMessage $MergeTitleMessage `
+                    -Token $Token
+            } catch {}
     
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
-    }
-    
-    It "writes result=failure for empty Token" {
-        Merge-Pull-Request `
-            -RepoName $RepoName `
-            -OrgName $OrgName `
-            -PrNumber $PrNumber `
-            -MergeType $MergeType `
-            -MergeTitleMessage $MergeTitleMessage `
-            -Token ""
-    
-        $output = Get-Content $env:GITHUB_OUTPUT
-        $output | Should -Contain "result=failure"
-        $output | Should -Contain "error-message=Missing required parameters: RepoName, OrgName, PrNumber, MergeType, MergeTitleMessage, and Token must be provided."
-    }
+            $output = Get-Content $env:GITHUB_OUTPUT
+            $output | Should -Contain "result=failure"
+            $output | Where-Object { $_ -match "^error-message=Error: Failed to merge pull request. Exception:" } |
+				Should -Not -BeNullOrEmpty
+        }
+    }    
 }
