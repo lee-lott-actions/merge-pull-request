@@ -65,7 +65,7 @@ Describe "Merge-Pull-Request" {
         }
     }
 
-    Context "Parameter Validation Failure Cases {
+    Context "Parameter Validation Failure Cases" {
         It "unit: Merge-Pull-Request fails with empty RepoName" {
             Merge-Pull-Request `
                 -RepoName "" `
@@ -161,7 +161,7 @@ Describe "Merge-Pull-Request" {
         }    
     }
 
-    Context "Exception Failure Cases {
+    Context "Exception Failure Cases" {
         It "unit: Merge-Pull-Request fails with exception" {
             Mock Invoke-WebRequest { throw "API Error" }
     
