@@ -24,15 +24,14 @@ function Merge-Pull-Request {
   }
   
   $githubApiUrl = $env:MOCK_API
-  if (-not $githubApiUrl) { $githubApiUrl = "https://api.github.com" }
-  
+  if (-not $githubApiUrl) { $githubApiUrl = "https://api.github.com" }  
   $uri = "$githubApiUrl/repos/$OrgName/$RepoName/pulls/$PrNumber/merge"
 
   $headers = @{
       Authorization = "Bearer $Token"
       Accept = "application/vnd.github+json"
-      "Content-Type" = "application/json"
       "X-GitHub-Api-Version" = "2026-03-10"
+      "Content-Type" = "application/json"      
   }
   
   $body = @{
@@ -40,21 +39,23 @@ function Merge-Pull-Request {
       merge_method = "$MergeType"
   } | ConvertTo-Json
   
-  try {
-      Write-Host "Merging Pull Request..."
-      $response = Invoke-WebRequest -Uri $uri -Headers $headers -Method PUT -Body $body
- 
-     if ($response.StatusCode -eq 200) {
-          "result=success" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Pull Request #$PrNumber in repository $RepoName merged with merge type $MergeType. Status: $($response.StatusCode)"
-      } else {
-          "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "error-message=Merge failed with status code $($response.StatusCode)." | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Merged failed with status code $($response.StatusCode)."
-      }      
+  try {    
+    Write-Host "Merging Pull Request #$PrNumber..."
+    $response = Invoke-WebRequest -Uri $uri -Headers $headers -Method PUT -Body $body -SkipHttpErrorCheck
+
+   if ($response.StatusCode -eq 200) {
+      Add-Content -Path $env:GITHUB_OUTPUT -Value "result=success"
+      Write-Host "Pull Request #$PrNumber in repository $RepoName merged with merge type $MergeType. Status: $($response.StatusCode)"
+    } else {
+      $errorMsg = "Error: Failed to merge pull request. Status: $($response.StatusCode)."
+      Add-Content -Path $env:GITHUB_OUTPUT -Value "result=failure"
+      Add-Content -Path $env:GITHUB_OUTPUT -vALUE "error-message=$errorMsg"
+      Write-Host $errorMsg
+    }      
   } catch {
-    "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-    "error-message=Merge threw an exception and failed." | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-    Write-Error "Failed to merge pull request: $_"      
+    $errorMsg = "Error: Failed to merge pull request. Exception: $($_.Exception.Message)"
+    Add-Content -Path $env:GITHUB_OUTPUT -Value "result=failure"
+    Add-Content -Path $env:GITHUB_OUTPUT -Value "error-message=$errorMsg"
+    Write-Host $errorMsg
   }
 }
